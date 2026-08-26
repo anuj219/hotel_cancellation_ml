@@ -1,0 +1,517 @@
+# Create project
+mkdir hotel_cancellation_ml
+cd hotel_cancellation_ml
+
+# Initialize uv project
+uv init
+
+# Create virtual environment
+uv venv
+
+# Install dependencies
+uv add pandas numpy matplotlib seaborn scikit-learn jupyter ipykernel
+
+# Open in VS Code
+code .
+
+then select kernel in notebook
+
+
+uv add pandas numpy matplotlib seaborn scikit-learn jupyter ipykernel3.11
+
+Data - 
+    data.columns - 
+        ['hotel', 'is_canceled', 'lead_time', 'arrival_date_year',
+       'arrival_date_month', 'arrival_date_week_number',
+       'arrival_date_day_of_month', 'stays_in_weekend_nights',
+       'stays_in_week_nights', 'adults', 'children', 'babies', 'meal',
+       'country', 'market_segment', 'distribution_channel',
+       'is_repeated_guest', 'previous_cancellations',
+       'previous_bookings_not_canceled', 'reserved_room_type',
+       'assigned_room_type', 'booking_changes', 'deposit_type', 'agent',
+       'company', 'days_in_waiting_list', 'customer_type', 'adr',
+       'required_car_parking_spaces', 'total_of_special_requests',
+       'reservation_status', 'reservation_status_date']
+
+    will need to convert arrival_date_month to numbers  
+        --[but will have to do cyclic encoding, as Jan 1 and December as 12 (diff of 11) is wrong as they are actually consecutive]
+
+    in meal - Undefined value in rows must be made to SC
+    --[cause its mentioned on kaggle,  Undefined/SC – no meal package]
+
+    Data.info() - 
+        <class 'pandas.DataFrame'>
+        RangeIndex: 119390 entries, 0 to 119389
+        Data columns (total 32 columns):
+        #   Column                          Non-Null Count   Dtype  
+        ---  ------                          --------------   -----  
+        0   hotel                           119390 non-null  str    
+        1   is_canceled                     119390 non-null  int64  
+        2   lead_time                       119390 non-null  int64  
+        3   arrival_date_year               119390 non-null  int64  
+        4   arrival_date_month              119390 non-null  str    
+        5   arrival_date_week_number        119390 non-null  int64  
+        6   arrival_date_day_of_month       119390 non-null  int64  
+        7   stays_in_weekend_nights         119390 non-null  int64  
+        8   stays_in_week_nights            119390 non-null  int64  
+        9   adults                          119390 non-null  int64  
+        10  children                        119386 non-null  float64
+        11  babies                          119390 non-null  int64  
+        12  meal                            119390 non-null  str    
+        13  country                         118902 non-null  str    
+        14  market_segment                  119390 non-null  str    
+        15  distribution_channel            119390 non-null  str    
+        16  is_repeated_guest               119390 non-null  int64  
+        17  previous_cancellations          119390 non-null  int64  
+        18  previous_bookings_not_canceled  119390 non-null  int64  
+        19  reserved_room_type              119390 non-null  str    
+        20  assigned_room_type              119390 non-null  str    
+        21  booking_changes                 119390 non-null  int64  
+        22  deposit_type                    119390 non-null  str    
+        23  agent                           103050 non-null  float64
+        24  company                         6797 non-null    float64
+        25  days_in_waiting_list            119390 non-null  int64  
+        26  customer_type                   119390 non-null  str    
+        27  adr                             119390 non-null  float64
+        28  required_car_parking_spaces     119390 non-null  int64  
+        29  total_of_special_requests       119390 non-null  int64  
+        30  reservation_status              119390 non-null  str    
+        31  reservation_status_date         119390 non-null  str    
+        dtypes: float64(4), int64(16), str(12)
+        memory usage: 29.1 MB
+
+    
+    data.describe() - 
+        children and babies have very low SD (0.3 and 0.09)
+
+    data.isnull().any() - 
+        children, country, agent, company
+        these have null values present
+        (df.isnull().sum()/len(df)*100).sort_values(ascending=False)
+        company             94.306893
+        agent             13.686238
+        country              0.408744
+        children              0.003350
+
+        company - Candidate for removal because 94% of values are missing. We'll verify whether missing itself carries information before deciding.
+        for others, we will find solution
+
+        undefined class - 
+            market_segment, distribution_channel
+
+    
+    reservation_status makes target leakage-
+        because if 'Canceled' there, means after arrival, then its a bias
+    similar issue with reservation_status_date
+
+    'Agent' seems like IDs of agents
+
+
+
+EDA-
+    Target class imbalance % - 
+        67% is not cancelled data
+
+    groupby("is_canceled")["lead_time"].describe() [for numerical]
+        lead_time -
+            1	44224.0	144.848815	118.624829	0.0	48.0	113.0	214.0	629.0
+            People cancelling are often ones with more lead time (144days avg), with 118 days up n down too
+            so it looks like it starts from 48 days
+            [although .. shouldnt mean and Q2 be same?? ]
+            inference - yes, lead time does affect cancellation
+
+        adr - 
+            0	75166.0	99.987693	49.206263	-6.38	67.500	92.5	125.00	510.0
+            1	44224.0	104.964333	52.571142	0.00	72.415	96.2	127.62	5400.0
+            almost same, so no inference
+            but, unusual -ve min value found
+        
+        booking_changes-
+            very less sd, plus 0 quartiles in both cases
+            slight inference from means (0.293364 and 0.098340 for 0 n 1) - more changes might indicate less cancellation
+        previous_cancellations - same case as above
+            but means (0.015792 and 0.208348) shows the higher the previous, the more they are cancelled again
+        total_of_special_requests - similar as booking_changes
+        days_in_waiting_list - 
+            what to infer from this
+            0	75166.0	1.589868	14.784875	0.0	0.0	0.0	0.0	379.0
+            1	44224.0	3.564083	21.488768	0.0	0.0	0.0	0.0	391.0
+            i.e almost 75% people never waited, 
+            mean indicates some might have waited, that too for longer times, thus data is skewed
+
+
+
+    pd.crosstab(data['hotel'], data["is_canceled"], normalize="index") [for categorical]
+        hotel  - resort hotel had less cancellations (72% didnt cancel)
+            while city had 58% who didnt cancel
+        meal -
+            FB had 59% cancellations
+            other types had less cancellations
+        country - 
+            too many unique values to check
+        market_segment - 'groups' had highest cancellation 61%
+            while others had more of no cancellation
+            'complementary' ones had only 13% cancellation (but, we dont actually know how many data points it had in total)
+
+        customer_type - 
+            comparitively, Transient type had highest cancellation, 40%
+            while group being lowest (although in market_segment group was highest, so its contradicting)
+        
+        reserved_room_type - p type had 100% cancellation, but again we dont know how many values
+        assigned_room_type - again p and L had 100% cancellatio
+        shouldnt we check if, customer reserved_room_type A but maybe got D assigned, then did he cancel    
+            so does apriori come in handy here [-- nahh]
+            [--instead one boolean col could be created, for room_changed or not, and then its correlation to cancellation could be checked]
+
+        is_repeated_guest - nothing valuable, non-repeating had as expected, more cancellations (37%)
+            compared to repeating (14%)
+
+        why not for arrival date month week and all
+        arrival_date_year - all three years had less of cancellations
+        arrival_date_month - same, although april n june had most cancellations comparitively (40% to 41%)
+            but they are vacation months, there should be comparitively less cancellations right
+        arrival_date_week_number -             
+            is_canceled	0	1
+            arrival_date_week_number		
+            25	53.398423	46.601577
+            18	55.092276	44.907724
+            20	56.265709	43.734291
+        
+        stays_in_weekend_nights - 
+            7	26.315789	73.684211
+            9	36.363636	63.636364
+            6	43.137255	56.862745
+
+
+        
+        [Why not check such similar for all cols like country and adults and etc, why did gpt directly say to check for deposity type
+        if yes, shouldnt I do the association rule minning (apriori/arules), which will do such for all columns
+        and then, take the best features based on support n confidence
+        and then pre-process those columns further more
+        ---cause association rule minning isnt for predictive problems]
+
+
+    outlier detection - 
+        numerical - 
+            Understanding data distribution using histogram
+                lead_time - left skewed as in, 0 has highest frequency while it keeps decresing
+                    graph goes almost linearly down till 450/500 touching to 0 frequency
+                adults - somewhat symmetric
+            nah but histogram isnt effective in pointing out outliers
+
+            so boxplot [uses IQR method]
+                adr -   
+                    mild outliers, 
+                    one major extreme value 5400 found
+                    it is only 1 row with value greater than 1000 in entire dataset, 
+                    only one weekend night, and only 2 adults, thus 5400 is outlier
+                lead_time - 
+                    middle 50% between 20 to 150 days
+                    whiskers till 370 days
+                    outliers acc to IQR - 
+                        mild upto 620 days, high outliers 700 n 720 (only 2 entries above 650 days)
+                        row 1 doesnt make sense to me, 737 days (almost 2.5 years), 0 weekend and weeknight stays, only 2 adults, that too without any special requests
+                        row 4182 makes somewhat sense as its for 8 weekend and 20 weeknight stays, adr is also lower than mean, so they might also be given discount, so idt its a faulty entry
+                stays_in_weekend_nights - 
+                    middle 50% between 0 to 2.5, whiskers till 5
+                    outliers upto 19
+                    row1655: weekend nights - 13, weeknights - 33, but adr is 0 here ...
+                        same case with 3-4 other rows
+                stays_in_week_nights - 
+                    middle 50% between 1 to 3, whiskers till 0 to 1 and 3 to 6
+                    kind of symmetric
+                    outliers upto 50, 50 being the farthest and most isolated
+                    dont we need to check the whiskers here for being outlier as well
+                children - 
+                    skwed, almost everything in 0
+                    some values between 1 n 4, and then directly at 10
+                    row328: only single row with children's older than 3, 10 children !, plus only 2 adults with them , sounds unusual
+                babies - almost same as children, even more values in 0
+                previous_cancellations - same, more values in 0
+                    extremes upto 27
+                    I saw few rows with values > 25, but how do I figure out if they're actually outlier or not
+                days_in_waiting_list - 
+                    very unusual box plot
+                    values upto 400, majority in 0
+                    days 0 to 125 have almost 200-400 values
+                    extreme values lie after days 325
+                    how to check, maybe remove rows where days waiting are > lead time [nahh none present]
+
+                required_car_parking_spaces - 
+                    most in 0  (approx 1,20,000)
+                    few in 1 (approx 8000), 
+                    outlier is ig 8 (2 values), cause only 2 entries with parking spaces greater than 3 in entire data
+                total_of_special_requests - 
+                    50% between 0 and 1, whiskers till 2, 
+                    only 380 values above 3, only 40 values in 5
+                    no idt there will be any outliers, as range is quite small
+
+
+Feature Engineering -
+    total stays nights - 
+        stays_in_weekend_nights + stays_in_week_nights
+
+        count	mean	std	min	25%	50%	75%	max
+        is_canceled								
+        0	75166.0	3.393023	2.577671	0.0	2.0	3.0	4.0	69.0
+        1	44224.0	3.487179	2.521601	0.0	2.0	3.0	4.0	56.0
+
+        Looks like, it doesnt affect cancellation much
+        still, better to give the model, this combined value
+        [-- but replacing the two cols by this, wont it snatch away any impact they individually had on the outcome/cancellation]
+
+    total_people - 
+        	count	mean	std	min	25%	50%	75%	max
+        is_canceled								
+        0	75166.0	1.942461	0.669966	0.0	2.0	2.0	2.0	12.0
+        1	44220.0	2.012031	0.801827	0.0	2.0	2.0	2.0	55.0
+
+    room_changed - 
+        is_canceled	0	1
+        room_changed		
+        False	0.584371	0.415629
+        True	0.946236	0.053764
+        weird to see, if room changed, then its very less cancellation, (14917 True values in entire dataset)
+        [-- if assigned room type is assigned closer to arrival, then that means, it was probably not cancelled, thus target leakage]
+        
+
+Final Features -
+    'hotel', 'is_canceled', 'lead_time', 'arrival_date_year',
+    'arrival_date_month', 'arrival_date_week_number',
+    'arrival_date_day_of_month', 'stays_in_weekend_nights',
+    'stays_in_week_nights', 'adults', 'children', 'babies', 'meal',
+    'country', 'market_segment', 'distribution_channel',
+    'is_repeated_guest', 'previous_cancellations',
+    'previous_bookings_not_canceled', 'reserved_room_type',
+    'assigned_room_type', 'booking_changes', 'deposit_type', 'agent',
+    'company', 'days_in_waiting_list', 'customer_type', 'adr',
+    'required_car_parking_spaces', 'total_stays', 'total_people', 'room_changed'
+
+       could we remove assigned and reserved room type, now that we have have boolean room_changed col for it
+
+
+pre processing strategy on selected features - 
+    hotel - OHE,
+    lead_time - maybe scale
+    arrival_date_month - cyclic encoding
+    arrival_date_week_number, arrival_date_day_of_month, stays_in_weekend_nights, stays_in_week_nights, adults
+    children, babies, is_repeated_guest, previous_cancellations, previous_bookings_not_canceled - scale maybe
+    meal - 5 types, OHE seems fine
+    country - ? target encoding maybe, so many values
+        so maybe, see which ones affect cancellation most, then take top few and set their target labels, and remaining (less impact ones) put into "Other" cateogry 
+    market_segment - 8 values, OHE maybe, as label cant be done cause there is no order
+    distribution_channel - seems similar to market_segment
+    deposit_type - OHE, only 3 values
+    agent, company - I guess its best to keep it as it is
+    customer_type - 4 types, so OHE
+
+
+
+    null values - 
+        agent - 13% nulls
+            maybe they are bookings done without any agent, so we could assign them 0 [no other agent has id 0 yet]
+            [[--check agents impact on cancellations and see if should take top 20 cols]]
+        country - 
+            yes mode seems right, as it is categorical
+        children - 
+            only 4 rows, maybe give them all 0
+        company - drop
+
+split n  preprocess - 
+    X_train, X_test, Y_train, Y_test = train_test_split(X, Y, random_state=32, test_size=0.3)
+
+    get_dummies vs OHE
+    for real ML pipeline, OneHotEncoder is better as , suppose if unseen class comes up in testing set, then OneHotEncoder wont throw an error
+    get_dummies is more used for EDA only 
+
+    but, we dont use OHE directly   
+    its used internally inside column_transformer pipeline
+    which handles fit n transform and other steps easily
+
+Pipeline made
+    numeric(simple imputer + standard scaler) and categorical (simple imputer + OHE)
+    both combined into a column_transformer pipeline
+
+Model trained
+    logistic regression - 
+        precision    recall  f1-score   support
+
+                0       0.76      0.95      0.85     22560
+                1       0.86      0.50      0.63     13257
+
+            accuracy                           0.78     35817
+        macro avg       0.81      0.72      0.74     35817
+        weighted avg       0.80      0.78      0.77     35817
+
+        0.6295232624928202
+
+        correctly identifies 95% of customers who don't cancel.
+        But it only catches half of all cancellations.
+        when it predicts cancellation, its correct most of time (0.86)
+        in hotel's case, usually higher recall for cancelled class would be preferrable
+
+    
+    RandomForest - 
+        precision    recall  f1-score   support
+
+                0       0.84      0.90      0.87     22560
+                1       0.81      0.72      0.76     13257
+
+            accuracy                           0.83     35817
+        macro avg       0.83      0.81      0.82     35817
+        weighted avg       0.83      0.83      0.83     35817
+
+        0.7604538347432145
+
+        recall comparitively higher
+
+
+Hyperparamter tuning - 
+    paramter-   
+        model learns from data
+        eg weights in Logistic reg, decision thresholds, leaf predictions
+        not set manually    
+    Hyperparamter - 
+        they control how the model learns
+        eg nestimators, max_depth etc
+        chosen before training
+        it is to find the sweet spot [no under/over fitting]
+        
+        n_estimators - more stability but moren train time
+        max_depth - deepness, controls overfitting
+        min_samples_split - min samples needed to split a node, prevents tiny splits
+        min_samples_leaf - min samples for a leaf, prevents tiny overfit leaves
+        max_features - num of features considered at each split
+
+    methods to find best params-
+        grid search - 
+            you provide a list/range for each parameter,
+            so each permutation combination makes a model and tests it
+            can become slow
+        randomized search - 
+            samples combinations randomly
+            commonly preferred for large search spaces
+
+            RandomizedSearchCV - repeatedly trains RF with diff Hyperparamters
+
+    implementation-
+        search = RandomizedSearchCV(
+            estimator=pipeline,   # means tuning entire pipeline
+            param_distributions=param_dist,
+            n_iter=10, # try random 20 possible combinations, of parameters
+            scoring="f1", #
+            cv=5,  # 5-fold cross-validation, training data split into 5 parts, trains 5 times
+            # 4 fold -> training, 1 fold -> validation, then avg f1-score
+            verbose=2, # prints progress
+            random_state=42, # someone else runs with same seed, they will get same 20 sample combinations
+            n_jobs=1 # -1 means use all cpu cores, speeds it up | 1 means ??
+        )
+        output - 
+            {'model__n_estimators': 200, --> The forest uses 200 decision trees.
+            'model__min_samples_split': 2, --> node only needs 2 samples before it is allowed to split
+            'model__min_samples_leaf': 1, --> Each leaf can contain just one sample, thus no evidence was found that larger leaves generalized better
+            'model__max_features': 'log2', --> RF randomly chooses only log2(no. of features)
+                                            So each split only considers about 5–6 random features (out of 50)
+                                            If every tree always looked at every feature, all trees would become similar
+                                            Randomness is what makes Random Forest powerful
+            'model__max_depth': 30, --> very detailed rules
+            }
+            0.7550509494705987 --> Average F1 over the 5 validation folds
+
+        tested on test data
+            0.7595...
+            slightly worsened compared to og RF model
+            so default config wins
+            The model with the best average cross-validation score doesn't always 
+            achieve the highest score on the held-out test set. That's because of natural sampling variation
+
+
+ROC curve - ((Receiver Operating Characteristic))
+    currently, RF uses 0.5 as threshold to classify cancelled or not_cancelled
+    that is default
+    maybe some other threshold might work better
+    ROC helps study every possible threshold    
+
+    threshold optimization-
+        to find threshold that maximizes f1 score 
+        [why focus on f1 though --- Since the dataset is moderately imbalanced (67% : 33%) and F1-score is a better metric than plain accuracy]
+        so we take thresholds from 0.10 to 0.90 and use model to get probability of cancellations
+        and then, test each threshold on probabilities and then calculate f1 score at each loops end
+        then see which one has best score
+
+        > best threshold found - 0.3999
+        its score - 0.771
+        improvement can be seen
+        plotted all thresholds and their scores
+
+    applied optimum and printed the classification report
+    >> 
+              precision    recall  f1-score   support
+
+           0       0.88      0.84      0.86     22560
+           1       0.75      0.80      0.77     13257
+
+    accuracy                           0.82     35817
+    macro avg       0.81      0.82      0.81     35817
+    weighted avg       0.83      0.82      0.83     35817
+    After threshold optimization, the model became better at identifying cancellations (inc from 0.72 to ~0.80), 
+    at the expense of correctly identifying some non-cancelled bookings (class 0 recall decreased from ~0.91 to ~0.84). 
+    This trade-off increased the overall F1-score while maintaining similar accuracy
+
+
+SHAP - 
+    RF cant answer by default, the reason or metrics behind a single predictions
+    Feature importance is global, it tells which feature impacts how much overall
+    but for explainability, we need more granular output
+    SHAP does that
+        it gives impact of each feature for that particular prediction
+        pushing towards either of the classes
+        This is kind of explainable AI
+
+        uv add shap
+
+
+
+Next steps left - 
+    Further tuning--
+    industry worthy steps--
+    ROC AUC ---
+    visualize confusion matirx industry level --
+    split section wise, so its better to troubleshoot
+    save pipeline
+    deploy somewhere with proper industrial standards
+
+    why not apriori , just understand that entire part
+    understand the cyclic encoding part in detail 
+    we made mistake, 'meal' ka undefined was converted to Sc, instead of SC, so there are two different sc classes currently
+
+
+    could've used MLFLOW, which tracks each run (or experiment)
+        saves model, metadata, even evaluation metrics
+    what is optuna? how was ours different
+
+    I took a real-world dataset → analyzed it → cleaned it → engineered features → built preprocessing pipelines → trained multiple models → tuned Random Forest → optimized classification threshold → evaluated using ROC-AUC/F1/confusion matrix → explained predictions using SHAP → serialized the pipeline → exposed it through an API → deployed it.
+
+
+
+App.py - 
+    uv run fastapi dev app.py
+
+Dockerization - 
+    Made app/ and /model directories
+    Docker will only have the required files. no need for notebook and venv files
+
+    made requirements.txt for containerization
+        it is diff from our local uv environment
+        as trainig env != inference env
+
+    docker build -t hotel-cancellation-api .
+    docker run -p 8000:8000 hotel-cancellation-api
+    docker ps
+
+    accessible at http://127.0.0.1:8000/docs
+
+    reduced dockerignore file size, so overall container size can be reduced from 381mb
+
+    we need to make container cloud compatble-  
+        port to be made configurable

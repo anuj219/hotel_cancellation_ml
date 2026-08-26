@@ -1,0 +1,65 @@
+model/hotel_cancellation_pipeline.pkl
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# =========================
+# Jupyter
+# =========================
+.ipynb_checkpoints/
+
+# =========================
+# ML model artifacts
+# =========================
+model/*.pkl
+*.joblib
+
+# =========================
+# Dataset / large data
+# =========================
+data/
+*.csv
+*.xlsx
+*.parquet
+
+# =========================
+# Environment / secrets
+# =========================
+.env
+.env.*
+!.env.example
+
+# =========================
+# IDE / editor
+# =========================
+.vscode/
+.idea/
+
+# =========================
+# OS generated
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# Python tooling / testing
+# =========================
+.pytest_cache/
+.coverage
+htmlcov/
+
+# =========================
+# Logs / temporary files
+# =========================
+*.log
+tmp/
+temp/
