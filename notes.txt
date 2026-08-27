@@ -515,3 +515,10 @@ Dockerization -
 
     we need to make container cloud compatble-  
         port to be made configurable
+
+
+model -
+    removed it from github push as it was too big
+    uploaded it to releases of the repo
+
+    made changes to dockerfile to not copy model/ anymore, instead download it from releases using curl
