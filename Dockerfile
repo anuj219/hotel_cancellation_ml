@@ -2,12 +2,22 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Install curl for downloading the model
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl && \
+    rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
-COPY model ./model
+# COPY model ./model
+
+RUN mkdir -p /app/model && \
+    curl -fL \
+    -o /app/model/hotel_cancellation_pipeline.pkl \
+    "https://github.com/anuj219/hotel_cancellation_ml/releases/download/v1.0-model/hotel_cancellation_pipeline.pkl"
 
 EXPOSE 8000
 
