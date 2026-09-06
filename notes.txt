@@ -512,13 +512,173 @@ Dockerization -
     accessible at http://127.0.0.1:8000/docs
 
     reduced dockerignore file size, so overall container size can be reduced from 381mb
+        -- how to answer , what if model size is too big, how do we reduce it without affecting its performance???
 
     we need to make container cloud compatble-  
         port to be made configurable
 
+    docker ps tells us about the container. Application logs and /health tell us about the application.
 
 model -
     removed it from github push as it was too big
     uploaded it to releases of the repo
 
     made changes to dockerfile to not copy model/ anymore, instead download it from releases using curl
+
+Didnt go with Render deployment as, container size was exceeding 512mb memory limit of Render
+
+AWS Ec2 - 
+    Name           hotel-cancellation-api
+    AMI            Amazon Linux 2023
+    Instance       t3.small
+    RAM            2 GiB
+    Key            hotel-cancellation-key.pem
+    Storage        20 GB gp3
+
+    Inbound:
+    22   → My IP
+    8000 → Anywhere      [temporary]
+    80   → Anywhere      
+
+
+
+Container ran on EC2 
+    Steps : 
+        1  clear
+        2  whoami
+        3  cat /etc/os-release
+        4  free -h
+        5  df -h
+        6  sudo dnf update -y
+        7  sudo dnf install -y docker
+        8  sudo systemctl start docker
+        9  sudo systemctl enable docker
+        10  sudo systemctl status docker
+        11  sudo usermod -aG docker ec2-user
+        13  docker --version
+        14  docker ps
+        15  sudo dnf install -y git
+        17  git clone https://github.com/anuj219/hotel_cancellation_ml
+        18  ls
+        19  cd hotel_cancellation_ml
+        20  ls -la
+        21  docker build -t hotel-cancellation-api:v1 .
+        22  docker ps
+        24  docker images
+        25  docker run -d   --name hotel-cancellation-api   --restart unless-stopped   -p 8000:8000   hotel-cancellation-api:v1
+        26  docker ps
+        27  docker logs hotel-cancellation-api
+        28  curl http://127.0.0.1:8000/health
+        29  docker stats hotel-cancellation-api
+
+    checked on http://54.235.40.22:8000/health -> worked fine
+
+    29  docker stats hotel-cancellation-api ::   
+        CONTAINER ID   NAME                     CPU %     MEM USAGE / LIMIT     MEM %     NET I/O         BLOCK I/O       PIDS
+        3c1657c60811   hotel-cancellation-api   0.13%     583.2MiB / 1.865GiB   30.54%    1.73kB / 521B   303MB / 958kB   9
+
+
+Currently Uvicorn itself is directly exposed to the internet
+    we can use NGINX as a reverse proxy so the Uvicorn application server isnt directly exposed publicly
+
+    so currently, we have -p 8000:8000
+        i.e Take port 8000 on the EC2 machine and forward it to port 8000 inside the container.
+        and AWS security group has 8000 → Anywhere, thus internet can freely reach container via 8000
+
+    but, moving to production, only nginx will be opened to internet
+    and only nginx will communicate with the container within our network, so
+    we do :
+        docker run -d \
+        --name hotel-cancellation-api \
+        --restart unless-stopped \
+        -p 127.0.0.1:8000:8000 \
+        hotel-cancellation-api:v1
+    Only accept connections to port 8000 coming from this EC2 machine itself (i.e via nginx)
+
+
+    installed nginx : accessible at http://3.80.23.29/
+    now we need to connect nginx to our container
+    so, we configure it as reverse proxy :
+        sudo nano /etc/nginx/conf.d/hotel-api.conf , add--->
+            server {
+                listen 80;
+                server_name _;
+                //_ means accept requests regardless of the hostname.
+
+                location / {
+                    // applies to all URLs starting with / (/health, /predict)
+                    proxy_pass http://127.0.0.1:8000;
+                    // NGINX receives the public request and makes another request internally to FastAPI.
+
+                    // The proxy_set_header lines preserve useful information about the original request, 
+                    // because otherwise FastAPI mostly sees NGINX as the client.
+                    proxy_set_header Host $host;
+                    proxy_set_header X-Real-IP $remote_addr; 
+                    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                    proxy_set_header X-Forwarded-Proto $scheme; //Tells your application whether the original request was http or https
+                }
+            }
+
+
+    so essentially :
+        your laptop
+            │
+            │ GET /health
+            ▼
+        3.80.23.29:80
+            │
+            ▼
+        NGINX
+            │
+            │ GET /health
+            ▼
+        127.0.0.1:8000
+            │
+            ▼
+        Docker
+            │
+            ▼
+        FastAPI
+
+    
+    sudo nginx -t
+    sudo systemctl reload nginx
+
+    now, 
+        curl http://127.0.0.1/health works (from EC2 itself)
+        http://3.80.23.29/health , /docs, /predict all work (from local machine)
+
+    close port 8000 at AWS level
+        thus, EC2 → Instance → Security → Security Group → Edit inbound rules -> removed the open 8000 custom tcp rule
+
+S3 Model registry - 
+    Created private S3 bucket with versioning.
+    Upload model under hotel-cancellation/v1/
+    Create HotelCancellationEC2Role with only s3:GetObject on that model path
+    Attach the role to your running EC2.
+
+verifying if IAM works - 
+    ssh
+    aws sts get-caller-identity (which AWS identity the instance is using)
+        -> "Arn": "arn:aws:sts::665814845520:assumed-role/HotelCancellationEC2Role/i-01f5528f452fae392"
+
+    copy the model from S3 to ec2 folder
+        -rw-r--r-- ... 364M ... model.pkl
+
+    thus, No public model URL and no hard-coded credentials.
+
+Model downloading pipeline - 
+    Docker cant be doing RUN aws s3 cp ...
+        Docker build shouldn't depend on the EC2 host's runtime IAM identity
+
+    remove github release download lines from dockerfile
+        no model copy, curl, github download
+
+    We'll let the EC2 host retrieve the model
+        sudo mkdir -p /opt/hotel-api/model  
+        sudo chown ec2-user:ec2-user /opt/hotel-api/model
+
+TO BE DONE - 
+    HTTPS/domain → S3 model registry/versioning → IAM role → tests → ECR + GitHub Actions CI/CD 
+        → CloudWatch logging/monitoring → basic model drift monitoring.
+    Then learn conceptually how we'd migrate from one EC2 instance to ALB + ECS/Fargate/Auto Scaling if traffic demanded it.
