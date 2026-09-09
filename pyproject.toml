@@ -14,3 +14,17 @@ dependencies = [
     "scikit-learn>=1.9.0",
     "seaborn>=0.13.2",
 ]
+
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+markers = [
+    "integration: tests requiring the real trained model"
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
+]

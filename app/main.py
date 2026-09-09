@@ -2,16 +2,14 @@ import joblib
 import numpy as np
 import pandas as pd
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from pydantic import BaseModel, Field
 from typing import Literal  # for input validation
 
 from pathlib import Path
-# -------------------
 
-app = FastAPI()
-
-
+from contextlib import asynccontextmanager
+from app.features import prepare_booking
 
 # ------------------------------------------------------------
 # Load trained model
@@ -23,14 +21,21 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 model_path = BASE_DIR / "model" / "hotel_cancellation_pipeline.pkl"
 
 
-model = joblib.load(
-    # r"C:\Users\anujv\Desktop\Programming\Codes\Any Notes\ML\hotel_cancellation_ml\model\hotel_cancellation_pipeline.pkl"
-    model_path
-)
-
+# model = joblib.load(
+#     # r"C:\Users\anujv\Desktop\Programming\Codes\Any Notes\ML\hotel_cancellation_ml\model\hotel_cancellation_pipeline.pkl"
+#     model_path
+# )
+@asynccontextmanager   #--> defines what should happen during the lifetime of your FastAPI application
+async def lifespan(app: FastAPI):
+    app.state.model = joblib.load(model_path)   # --> → runs when the application starts.
+    yield  # --> The startup work is finished. Now let FastAPI run normally
+    app.state.model = None  # -->  → runs when the application shuts down
 
 THRESHOLD = 0.3999
 
+# -------------------
+
+app = FastAPI(lifespan=lifespan)
 
 # ------------------------------------------------------------
 # Month mapping
@@ -110,44 +115,18 @@ class Booking(BaseModel):
 # ------------------------------------------------------------
 
 @app.post("/predict")
-def predict(booking: Booking):
-
-    # Convert Pydantic object → dictionary
-    data = booking.model_dump()
-
+def predict(booking: Booking, request: Request):
     # --------------------------------------------------------
     # Feature engineering
     # --------------------------------------------------------
 
-    month = MONTH_MAP[data["arrival_date_month"]]
-
-    data["month_sin"] = np.sin(
-        2 * np.pi * month / 12
-    )
-
-    data["month_cos"] = np.cos(
-        2 * np.pi * month / 12
-    )
-
-    del data["arrival_date_month"]
-
-    data["total_stays"] = (
-        data["stays_in_weekend_nights"]
-        + data["stays_in_week_nights"]
-    )
-
-    data["total_people"] = (
-        data["adults"]
-        + data["children"]
-        + data["babies"]
-    )
-
+    booking_df = prepare_booking(booking)
+    
     # --------------------------------------------------------
     # Model prediction
     # --------------------------------------------------------
-    booking_df = pd.DataFrame([data])
 
-    probability = model.predict_proba(booking_df)[0, 1]
+    probability = request.app.state.model.predict_proba(booking_df)[0, 1]
 
     prediction = int(probability >= THRESHOLD)
 
@@ -167,8 +146,8 @@ def predict(booking: Booking):
     }
 
 @app.get("/health")
-def health():
+def health(request: Request):
     return {
         "status": "healthy",
-        "model_loaded": model is not None
+        "model_loaded": getattr(request.app.state, "model", None) is not None
     }

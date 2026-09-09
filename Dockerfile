@@ -23,5 +23,5 @@ EXPOSE 8000
 
 # CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]   
-# starts FastAPI inside the container   
+# starts FastAPI inside the container
 # this new version allows render or other platform to configure the container port based on their infra

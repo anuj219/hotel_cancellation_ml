@@ -657,28 +657,87 @@ S3 Model registry -
     Create HotelCancellationEC2Role with only s3:GetObject on that model path
     Attach the role to your running EC2.
 
-verifying if IAM works - 
-    ssh
-    aws sts get-caller-identity (which AWS identity the instance is using)
-        -> "Arn": "arn:aws:sts::665814845520:assumed-role/HotelCancellationEC2Role/i-01f5528f452fae392"
+    verifying if IAM works - 
+        ssh
+        aws sts get-caller-identity (which AWS identity the instance is using)
+            -> "Arn": "arn:aws:sts::665814845520:assumed-role/HotelCancellationEC2Role/i-01f5528f452fae392"
 
-    copy the model from S3 to ec2 folder
-        -rw-r--r-- ... 364M ... model.pkl
+        copy the model from S3 to ec2 folder
+            -rw-r--r-- ... 364M ... model.pkl
 
-    thus, No public model URL and no hard-coded credentials.
+        thus, No public model URL and no hard-coded credentials.
 
-Model downloading pipeline - 
-    Docker cant be doing RUN aws s3 cp ...
-        Docker build shouldn't depend on the EC2 host's runtime IAM identity
+    Model downloading pipeline - 
+        Docker cant be doing RUN aws s3 cp ...
+            Docker build shouldn't depend on the EC2 host's runtime IAM identity
 
-    remove github release download lines from dockerfile
-        no model copy, curl, github download
+        remove github release download lines from dockerfile
+            no model copy, curl, github download
+            push changes
 
-    We'll let the EC2 host retrieve the model
-        sudo mkdir -p /opt/hotel-api/model  
-        sudo chown ec2-user:ec2-user /opt/hotel-api/model
+        We'll let the EC2 host retrieve the model
+            sudo mkdir -p /opt/hotel-api/model  
+            sudo chown ec2-user:ec2-user /opt/hotel-api/model
+        
+        copy the model from S3 to this folder
+
+        pull changes into the ec2 hotel_cancellation_ml folder
+        build new v2 image 
+            doesnt download model from gh releases, but gets it from the opt/ directory
+            using this MODEL_PATH = BASE_DIR / "model" / "hotel_cancellation_pipeline.pkl"
+            
+            thus, smaller image ready
+
+        stop n remove running container
+        run new container , with mounting the model 
+            docker run -d \
+            --name hotel-cancellation-api \
+            --restart unless-stopped \
+            -p 127.0.0.1:8000:8000 \
+            -v /opt/hotel-api/model:/app/model:ro \
+            hotel-cancellation-api:v2
+
+        WORKS (curl, http)
+
+    I separated the model artifact from the application image. Models are versioned in a private S3 bucket, 
+    and the EC2 host retrieves them using an IAM role with least-privilege GetObject access. 
+    The artifact is mounted read-only into the inference container, so there are no AWS credentials or 
+    large model binaries embedded in the Docker image.
+
+
+ECR - 
+    currently , were building Docker image on the production EC2 machine    
+    Ideally production machine should run an already-built artifact
+    ECR stores the built deployable application image.
 
 TO BE DONE - 
     HTTPS/domain → S3 model registry/versioning → IAM role → tests → ECR + GitHub Actions CI/CD 
         → CloudWatch logging/monitoring → basic model drift monitoring.
     Then learn conceptually how we'd migrate from one EC2 instance to ALB + ECS/Fargate/Auto Scaling if traffic demanded it.
+
+
+Automated Testing - 
+    pytest and httpx installed
+
+    tests/ folder created
+
+    main.py changes - 
+        model loading runs as soon as app.main is imported
+        that means even simple /health test must load the 364mb RF model.
+
+        thus, move input feature engineering of main.py code to features.py
+
+        use lifespan - (loading and cleanup become explicitly tied to the FastAPI application's lifecycle)
+            just for better lifecycle management in production
+
+    
+    Test files - 
+        conftest.py	Provides reusable test setup and sample data
+        test_health.py	Checks whether the health endpoint works
+        test_features.py	Checks whether feature engineering is correct
+        test_prediction.py	Checks prediction responses and input validation
+
+    normal code changes
+        uv run pytest -v -m "not integration" -> to run fake model test files
+    Model release or dependency change
+        uv run pytest -v -m integration -> to run real-model test
