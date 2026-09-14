@@ -737,7 +737,10 @@ Automated Testing -
         test_features.py	Checks whether feature engineering is correct
         test_prediction.py	Checks prediction responses and input validation
 
-    normal code changes
-        uv run pytest -v -m "not integration" -> to run fake model test files
-    Model release or dependency change
-        uv run pytest -v -m integration -> to run real-model test
+    configured pyproject.toml-
+        normal code changes
+            uv run pytest -v -m "not integration" -> to run fake model test files
+        Model release or dependency change
+            uv run pytest -v -m integration -> to run real-model test
+
+    
