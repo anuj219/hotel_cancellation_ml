@@ -6,8 +6,8 @@ on:
       - main
 
 permissions:
-  contents: read
-  id-token: write
+  contents: read # allows it to read/checkout your repository
+  id-token: write # allows it to ask GitHub for an OIDC identity token
 
 jobs:
   test-and-build:
@@ -33,6 +33,11 @@ jobs:
       # 4. Run tests WITHOUT the real model
       - name: Run tests
         run: pytest -v -m "not integration"
+
+      - name: Debug OIDC claims
+        uses: github/actions-oidc-debugger@main
+        with:
+          audience: sts.amazonaws.com
 
       # 5. Ask AWS to let this workflow assume our IAM role
       - name: Configure AWS credentials
