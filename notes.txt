@@ -743,4 +743,25 @@ Automated Testing -
         Model release or dependency change
             uv run pytest -v -m integration -> to run real-model test
 
+    pinned the versioned requirements in .txt
+        tested local docker build, working.
+        thus push
+
+ECR - 
+    created ECR 
+    attached ECR read only IAM role to EC2
+    authenticating our docker client to ECR - 
+        aws ecr get-login-password --region us-east-1 | docker login   --username AWS   --password-stdin 665814845520.dkr.ecr.us-east-1.amazonaws.com
+            -AWS, give me a temporary password for ECR, and use that password to log my Docker client into account 665814845520's ECR registry in US East 
+
+        
+    ECR (Elastic Container Registry) is AWS's storage for Docker images. 
+    We created a private ECR repository called hotel-cancellation-api, while our ML model stays separately in private S3. 
+    EC2 was given ECR ReadOnly permission so it can pull application images, while GitHub Actions got a separate IAM role that can push images. 
+    Instead of storing permanent AWS access keys in GitHub, we configured GitHub as an OIDC Identity Provider, allowing workflows 
+    from our specific GitHub repo/main branch to prove their identity to AWS and temporarily assume the GitHub Actions IAM role through STS. 
+    So the final idea is: GitHub stores code → GitHub Actions tests/builds → ECR stores Docker image → EC2 pulls and runs image → S3 provides the model. 
+    The aws ecr get-login-password | docker login ... command simply authenticates Docker to ECR
+
+Github Actions - 
     
