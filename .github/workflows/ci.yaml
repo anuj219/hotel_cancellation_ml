@@ -34,23 +34,23 @@ jobs:
       - name: Run tests
         run: pytest -v -m "not integration"
 
-      - name: Show GitHub OIDC claims
-        uses: actions/github-script@v8
-        id: oidc
-        with:
-          script: |
-            const token = await core.getIDToken('sts.amazonaws.com');
+      # - name: Show GitHub OIDC claims
+      #   uses: actions/github-script@v8
+      #   id: oidc
+      #   with:
+      #     script: |
+      #       const token = await core.getIDToken('sts.amazonaws.com');
 
-            const payload = token.split('.')[1];
-            const decoded = JSON.parse(
-              Buffer.from(payload, 'base64url').toString()
-            );
+      #       const payload = token.split('.')[1];
+      #       const decoded = JSON.parse(
+      #         Buffer.from(payload, 'base64url').toString()
+      #       );
 
-            console.log("aud:", decoded.aud);
-            console.log("sub:", decoded.sub);
-            console.log("repository:", decoded.repository);
-            console.log("repository_id:", decoded.repository_id);
-            console.log("repository_owner_id:", decoded.repository_owner_id);
+      #       console.log("aud:", decoded.aud);
+      #       console.log("sub:", decoded.sub);
+      #       console.log("repository:", decoded.repository);
+      #       console.log("repository_id:", decoded.repository_id);
+      #       console.log("repository_owner_id:", decoded.repository_owner_id);
 
       # 5. Ask AWS to let this workflow assume our IAM role
       - name: Configure AWS credentials
