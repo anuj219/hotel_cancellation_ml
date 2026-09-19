@@ -763,5 +763,98 @@ ECR -
     So the final idea is: GitHub stores code → GitHub Actions tests/builds → ECR stores Docker image → EC2 pulls and runs image → S3 provides the model. 
     The aws ecr get-login-password | docker login ... command simply authenticates Docker to ECR
 
-Github Actions - 
+OIDC role part - Stwp 5 n 6 
+    We created an IAM role: HotelCancellationGitHubActionsRole
+    it has -
+        Trust policy = WHO can become this role -> Only this specific GitHub repository
+        Permissions policy = WHAT the role can do after becoming it -> can push Docker images
     
+    OIDC (OpenID Connect) lets GitHub prove its identity to AWS without us storing an AWS access key in GitHub.
+        GH generates a token with info like aud(audience)="sts.amazonaws.com" i.e who is it intended for, sub(subject)="our_repo" i.e who is requesting access
+        AWS verifies token through IAM OIDC provider - token.actions.githubusercontent.com
+    
+    After AWS accepts it, STS responds with temporary AWS credentials
+    this allows the role to GH
+    use those credentials to authenticate docker with ecr
+
+Github Actions - 
+    made ci.yaml defining the CICD workflow
+    starts a temporary Ubuntu machine
+    GitHub push
+        ↓
+    Temporary Ubuntu runner
+        ↓
+    Checkout code
+        ↓
+    Install Python + dependencies
+        ↓
+    pytest
+        ↓
+    tests pass?
+    /     \
+    NO      YES
+    ↓        ↓
+    STOP    OIDC token
+            ↓
+            AWS STS
+            ↓
+        Assume IAM role
+            ↓
+        ECR login
+            ↓
+        docker build
+            ↓
+        docker push
+            ↓
+            ECR
+
+    tagging each Docker image using the Git commit SHA
+
+    created a GitHub Actions CI pipeline that automatically runs whenever code is pushed to main. 
+    It creates a temporary Ubuntu runner, installs dependencies, runs our Pytest tests, and only if they pass builds the Docker image. 
+    GitHub authenticates to AWS using OIDC + STS temporary credentials, avoiding permanent AWS access keys, and assumes our restricted IAM role. 
+    The built image is then pushed to our private Amazon ECR repository using the Git commit SHA as an immutable version tag
+
+    SSH into Ec2
+    define ECR_URI and TAG
+    docker pull $ECR_URI:$TAG
+    close & remove old container - docker stop hotel-cancellation-api || docker rm hotel-cancellation-api
+    Run new downloaded image-
+        docker run -d \
+        --name hotel-cancellation-api \
+        --restart unless-stopped \
+        -p 127.0.0.1:8000:8000 \
+        -v /opt/hotel-api/model:/app/model:ro \
+        $ECR_URI:$TAG
+    working fine
+
+
+CD - 
+    AWS SSM (System Manager)
+        acts as AWS giving us a secure way to tell EC2: "Run these deployment commands."
+        So GitHub doesn't SSH into your server
+
+    attached AmazonSSMManagedInstanceCore policy to HotelCancellationEC2Role
+        test if SSM is running on our EC2 -> sudo systemctl status amazon-ssm-agent
+
+    also, GH needs permission to send command to SSM to trigger SSM 
+        give GH role a custom inline policy
+            ssm:SendCommand
+            ssm:GetCommandInvocation
+            ssm:ListCommandInvocations
+
+    Thus, 
+        HotelCancellationGitHubActionsRole
+        ├── ECR Push
+        └── SSM deployment command
+
+        HotelCancellationEC2Role
+        ├── S3 model read
+        ├── ECR image read
+        └── SSM managed-instance communication
+
+    sudo nano /opt/hotel-api/deploy.sh -> script that logs in docker with ECR, pulls the latest image, removes old container, starts new container and does polling to check if /health is running
+    sudo chmod +x /opt/hotel-api/deploy.sh
+
+    SSM remote deployment-
+        added workflow step to yaml which takes the commit ssh and sends command to SSM
